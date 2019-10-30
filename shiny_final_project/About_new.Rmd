@@ -1,0 +1,46 @@
+---
+title: "Crime in Boston: Introduction"
+output: 
+  html_document:
+    keep_md: yes
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+---
+
+
+## Rationale
+
+Public safety is vital to public health and happiness. Our goal was to build R shiny app to analyze various aspects of crimes in Boston, including:
+
+* Map displaying individual crimes by day
+
+* Heatmap displaying dangerous locations overall
+
+* Time series displaying trend of different crimes over time
+
+* Schools map displaying relationship between school locations and crime rate
+
+* Income map displayong relationship between income and crime rate by location
+
+
+## Data
+
+The data is from Boston Police Department hosted at data.boston.gov (https://data.boston.gov/dataset/crime-incident-reports-august-2015-to-date-source-new-system, https://data.boston.gov/dataset/crime-incident-reports-july-2012-august-2015-source-legacy-system)
+
+In total, there are 608,471 crimes recorded in the dataset. For each crime, the date, time, location, and crime description is provided.
+
+
+
+## Crime Classification 
+
+In our RShiny App, serious/less serious/least serious crimes are classified using Uniform Crime Reporting (UCR):
+
+* Serious Crime: This corresponds to Part 1 in UCR. Examples include aggrevated assault, robbery, and homicide
+
+* Less Serious: This corresponds to Part 2 in UCR. Examples include fraud, harassment, and vandalism
+
+* Least Serous: This corresponds to Part 3 in UCR. Examples include motor vehicle accidents, investigate person (for example stopping someone and frisking), and verbal disputes
+
+

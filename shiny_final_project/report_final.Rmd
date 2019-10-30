@@ -1,0 +1,934 @@
+---
+title: "Analysis of Crime in Boston"
+output: 
+  html_document:
+    keep_md: yes
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+author: Christina & Lucia
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE)
+library(tidyverse)
+library(lubridate)
+library(geojsonio)
+library(tmaptools)
+library(leaflet)
+library(rgdal)
+library(wordcloud)
+library(wesanderson)
+library(gganimate)
+library(gifski)
+library(gapminder)
+library(png)
+library(tidyr)
+library(dygraphs)
+library(xts)       
+library(lubridate)
+library(png)
+library(dygraphs)
+library(xts)         
+library(stringr)
+library(DT)
+library(here)
+library(rgdal)
+library(mapview)
+library(geojsonio)
+library(leaflet.extras)
+library(htmltools)
+library(plotly)
+```
+
+
+## Introduction
+
+### Rationale
+
+Public safety is vital to public health and happiness. Our goal was to build R shiny app to analyze various aspects of crimes in Boston, including:
+
+* Map displaying individual crimes by day
+
+* Heatmap displaying dangerous locations overall
+
+* Time series displaying trend of different crimes over time
+
+* Schools map displaying relationship between school locations and crime rate
+
+* Income map displayong relationship between income and crime rate by location
+
+
+### Data
+
+The data is from Boston Police Department hosted at data.boston.gov (https://data.boston.gov/dataset/crime-incident-reports-august-2015-to-date-source-new-system, https://data.boston.gov/dataset/crime-incident-reports-july-2012-august-2015-source-legacy-system)
+
+In total, there are 608,471 crimes recorded in the dataset. For each crime, the date, time, location, and crime description is provided.
+
+
+
+### Outline
+
+Here are the main areas this report addresses:
+
+* Most frequent crime types
+
+* Most frequent time periods of crime
+
+* Most frequent locations of crime
+
+* Changes in crime over time
+
+* Relationship between crime & schools
+
+* Relationship between crime & income
+
+
+```{r}
+crime_original <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/2012-2018dataset.csv")
+
+crime <- crime_original %>%
+  mutate(day_of_week_f = factor(DAY_WEEK, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))) %>%
+  mutate(day = date, yday = yday(occurred), date = as.Date(occurred), 
+         hour = hour(occurred))
+
+data3<-crime_original
+```
+
+This data contains crime data in Boston from 2015-06-15 to 2018-11-17, a total of 340415 incidents with 17 variables. It comes from the Boston Police Department (data.boston.gov).
+
+
+
+## Crime type
+
+### Most frequent crime type in Boston from 2012-2018
+
+The most frequent crime type is Motor vehicle accident followed by larceny and medical assistant.  
+```{r}
+data3%>%
+  group_by(INCIDENT_TYPE_DESCRIPTION)%>%
+  summarise(count=n())%>%
+  arrange(desc(count))%>%
+  head(n=10)%>%
+  ggplot(aes(x=reorder(INCIDENT_TYPE_DESCRIPTION, -count), y = count,fill=count))+
+  geom_bar(stat = "identity")+
+  theme(axis.text.x=element_text(angle=60,hjust=1))+
+ scale_fill_gradient2()+
+  xlab("Crime type")
+```
+### Most frequent crime by UCR_PART in Boston 
+
+The Uniform Crime Reports (UCR) compiles official data on crime in the United States, published by the Federal Bureau of Investigation (FBI). In Boston, the most frequent two crime types are Part I and Part II.
+In Part I, the UCR indexes reported incidents of index crimes which are broken into two categories: violent and property crimes.In Part II, the following categories are tracked: simple assault, curfew offenses and loitering, embezzlement, forgery and counterfeiting, disorderly conduct, driving under the influence, drug offenses, fraud, gambling, liquor offenses, offenses against the family, prostitution, public drunkenness, runaways, sex offenses, stolen property, vandalism, vagrancy, and weapons offenses.
+
+```{r}
+data3%>%
+  group_by(UCRPART)%>%
+  summarise(count=n())%>%
+  arrange(desc(count))%>%
+  ggplot(aes(x=reorder(UCRPART, -count), y = count,fill=count))+
+  geom_bar(stat = "identity")+
+  theme(axis.text.x=element_text(angle=60,hjust=1))+
+ scale_fill_gradient2()+
+  xlab("UCR")
+```
+
+### Trend of crime types in Boston from 2012-2018
+
+```{r}
+data3%>%
+  group_by(year,INCIDENT_TYPE_DESCRIPTION)%>%
+  summarise(count=n())%>%
+  arrange(year,desc(count))%>%
+  group_by(year)%>%
+  top_n(15)%>%
+  ggplot(aes(x=reorder(INCIDENT_TYPE_DESCRIPTION, -count), y = count)) + 
+  geom_bar(stat = "identity")+ 
+  theme(axis.text.x=element_text(angle=60,hjust=1))+
+  # Here comes the gganimate code
+  transition_states(
+    year,
+    transition_length = 2,
+    state_length = 1
+  ) +
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')+
+  labs(title="year{closest_state}")+
+  xlab("Crime type")
+```
+
+## Time
+
+### Hour
+
+Below shows a distribution of crime by the hour of the day: there seems to be less crime during early morning (around **5 am**), which makes sense since probably most people are asleep. As it gets to morning the crime rate goes up, and the amount of crime peaks around **4-7pm**, before gradually dropping as night comes. 
+
+* y-axis shows average number of crime per day during that hour, and errorbar shows standard error (all errorbars in subsequent graphs show standard error)
+
+```{r}
+temp <- crime %>%
+  group_by(date, hour) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  group_by(hour) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5))
+
+ggplot(temp) +
+  geom_col(aes(hour, avg),fill="chocolate1") +
+  geom_errorbar(aes(x = hour, ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9)) +
+  xlab("Hour") + 
+  ylab("Average Number of Crime Per Day")
+  
+```
+
+There are two other peaks at 12-1am and 12-1pm in the graph above, but it is likely due to data entry habits:
+
+```{r}
+crime %>%
+  mutate(minute = minute(occurred), temp = as.numeric(hour) * 60 + minute) %>%
+  ggplot() +
+  geom_histogram(aes(temp), binwidth = 1,fill="royalblue") +
+  scale_x_continuous("Minute", breaks = c(0, 360, 720, 1080, 1440)) +
+  ylab("Total Number of Crime") + 
+  theme_minimal()+theme(legend.position="top")
+```
+
+Above shows distribution of crime by the minute. There are two large peaks at 0 (= 12:00am) and at 720 (= 12:00pm), so possibly the police logged these two times in the database when the exact time is unclear
+
+
+
+
+### Day of the Week
+
+Below shows a boxplot that compares the number of crime per day between different days of the week. From the graph it seems like actually **Sunday** has the lowest number of crimes, which might be a little surprising since it is in the weekend. 
+**Friday** has the highest number of crimes (although the difference is small)
+
+```{r}
+crime %>%
+  group_by(date, day_of_week_f) %>%
+  summarize(count = n()) %>%
+  group_by(day_of_week_f) %>%
+  summarize(avg_crime = mean(count), stdev = sd(count)/n()) %>%
+  ggplot(aes(x = day_of_week_f, y = avg_crime)) +
+  geom_col(fill="wheat1") +
+  geom_errorbar(aes(ymin = avg_crime - stdev, ymax = avg_crime + stdev), width = 0.2) +
+  xlab("Day of Week") +
+  ylab("Average Number of Crime")
+
+```
+
+
+<br>
+
+The graph below shows more detailed distribution of crime across day of week & hour. The color shows the average number of crime at the specific hour and day of week (darker color is higher crime)
+
+As we have observed before, crime is lower during early morning, but the exact period of time with lowest number of crime shifts according to the day of the week: on **weekdays** crime is lowest around **1-5am**, while on **weekends** it *shifts later* and becomes lowest around **3-6am**. You might expect since people stay up to later on the weekends. 
+
+```{r}
+crime %>%
+  group_by(date, day_of_week_f, hour) %>%
+  summarise(count = n()) %>%
+  group_by(day_of_week_f, hour) %>%
+  summarise(avg = mean(count)) %>%
+  ggplot(aes(x = day_of_week_f, y = hour)) +
+  geom_tile(aes(fill = avg)) + 
+  xlab("Day of Week") +
+  ylab("Hour") +
+  labs(fill = "Count") + 
+  scale_fill_gradient(low = "#ffeded", high = "red")
+```
+
+
+
+### Day of the Month
+
+Below shows the distribution of crime according to day of the month
+
+```{r}
+crime %>%
+  group_by(date, day) %>%
+  summarize(count = n()) %>%
+  group_by(day) %>%
+  summarize(avg_crime = mean(count), stdev = sd(count)/n()) %>%
+  ggplot(aes(x = day, y = avg_crime)) +
+  geom_col(fill="darkslateblue") +
+  geom_errorbar(aes(ymin = avg_crime - stdev, ymax = avg_crime + stdev), width = 0.2) + 
+  xlab("Day of Month") +
+  ylab("Average Number of Crime")
+
+
+```
+
+1st, 15th, 31st have slightly larger number of crime, which could be due to data entry habits
+
+
+
+
+### Month
+
+Graph below shows the distribution of crime over different months of the year: crime seems to *increase* at the beginning of the year, peak at around *July*, and then *decrease* again (although the difference is not very large).
+
+This might be expected since Boston is up north and can be pretty cold, so people might stay inside more during the winter, leading to reduced crime.
+
+```{r}
+crime %>%
+  group_by(date, month) %>%
+  summarize(count = n()) %>%
+  group_by(month) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  ggplot() +
+  geom_col(aes(month, avg),fill="lightcyan3") +
+  geom_errorbar(aes(month, ymin = avg - sd, ymax = avg + sd), width = 0.2) + 
+  xlab("Month") +
+  ylab("Average Number of Crime (per day)")
+
+```
+
+
+<br>
+
+The graph below breaks it down by day of the year. Again you can see the crime count increasing in beginning of the year, peaking around mid-year, and then dropping again.
+
+(The blue lines in the back show standard error)
+
+* There is a huge dip at around 359~360th day of the year, which corresponds to Christmas every year, so it seems like there is *reduced crime on Christmas*. Criminals apparently enjoy holidays too  
+
+```{r}
+crime %>%
+  group_by(date, yday) %>%
+  summarize(count = n()) %>%
+  group_by(yday) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n() ^ 0.5)) %>%
+  ggplot() +
+  geom_line(aes(x = yday, y = avg)) +
+  geom_errorbar(aes(yday, ymin = avg - sd, ymax = avg + sd), color = "blue", alpha = 0.2) + 
+  xlab("Day of Year") +
+  ylab("Average Number of Crime")
+```
+
+
+### Year
+
+Below shows the distribution of crime (average number of crime per day) across different years: there appears to be an increase between 2014 and 2015, but this could be due to data issues (our data comes from two sets, one 2012~2015, one 2015~2018, so it is possible that the police now records or reports more crimes in the new crime entry system they started using in 2015)
+
+```{r}
+crime %>%
+  group_by(date, year) %>%
+  summarize(count = n()) %>%
+  group_by(year) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n() ^ 0.5)) %>%
+  ggplot() +
+  geom_col(aes(x = year, y = avg),fill="indianred1") +
+  geom_errorbar(aes(x = year, ymin = avg - sd, ymax = avg + sd), width = 0.2) +
+  xlab("Year") +
+  ylab("Average Number of Crime (per day)")
+```
+
+
+
+
+
+## Time series analysis 
+
+
+### Total Crime Trend
+```{r}
+
+data_3<-data3%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+data_3$occurred  = ymd_hms(data_3$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_3$count, order.by = data_3$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+
+### Shooting 
+
+There's a significant increase in shooting cases in Boston from the end of 2015 to 2016. This change might be accounted by changing the new crime recording system in Boston so that police officers can better tracing different crimes in Boston. The highest shooting crimes in one day occurred on 2017.12.19, on that day we found several new reported about shooting in Boston and several teens were killed. 
+```{r}
+data_shooting<-data3%>%
+  filter(Shooting=="Yes")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+ 
+# Since my time is currently a factor, I have to convert it to a date-time format!
+ data_shooting$occurred  = ymd_hms(data_shooting$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_shooting$count, order.by = data_shooting$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+
+### Drug Violation
+
+In Boston, the drug violation rate is fairly consistent throughout 2012 to 2018. One interesting thing we noticed is that drug  related crime is slightly increased during summer time of each year and it reaches its peak in 2015 summer time. This might because of the fact that it is warmer in summer thus traders are more willing to deal drugs. 
+
+```{r}
+data_drug<-data3%>%
+  filter(INCIDENT_TYPE_DESCRIPTION=="Drug Violation")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+ 
+# Since my time is currently a factor, I have to convert it to a date-time format!
+ data_drug$occurred  = ymd_hms(data_drug$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_drug$count, order.by = data_drug$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+### Motor Vehicle Accident 
+
+The graph below shows the motor vehicle accident throughout 2012 to 2018 in Boston. There's a slightly decrease in the accident rate trend after the end of 2015. The highest peak of motor vehicle accident happens by the end of Jan of 2015 and Feb in 2015. This is mainly a result from historically severe snow storm in 2015. Thus it explains why there's sudden increase on motor vehicle accident during this time. 
+```{r}
+data_drug<-data3%>%
+  filter(INCIDENT_TYPE_DESCRIPTION=="Motor Vehicle Accident")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+ 
+# Since my time is currently a factor, I have to convert it to a date-time format!
+ data_drug$occurred  = ymd_hms(data_drug$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_drug$count, order.by = data_drug$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+
+```
+
+
+
+
+
+### Crime Trend By UCR Part
+
+#### Part One
+```{r}
+
+data_part1<-data3%>%
+  filter(UCRPART=="Part One")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+data_part1$occurred  = ymd_hms(data_part1$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_part1$count, order.by = data_part1$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+
+#### Part Two
+```{r}
+
+data_part2<-data3%>%
+  filter(UCRPART=="Part Two")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+data_part2$occurred  = ymd_hms(data_part2$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_part2$count, order.by = data_part2$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+
+#### Part Three
+```{r}
+
+data_part3<-data3%>%
+  filter(UCRPART=="Part Three")%>%
+  group_by(year,month,date)%>%
+  mutate(count=n())
+
+data_part3$occurred  = ymd_hms(data_part3$occurred)
+ 
+# Then you can create the xts format, and thus use dygraph
+don=xts(x = data_part3$count, order.by = data_part3$occurred)
+dygraph(don) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+```
+
+## Location
+
+
+### Police District
+
+Below shows the distribution of crime by police district: *Roxbury* seems to be the most dangerous, and *Charlestown* the least dangerous.
+
+```{r}
+
+# HTU seems to mean Human Trafficking Unit, which doesn't really make much sense in terms of location, so I just made it NA
+district_names <- tibble(
+  REPTDISTRICT = c("A1", "A7", "A15", "B2", "B3", "C6", "C11", "D4", "D14", "E5", "E13", "E18", "HTU", "NULL"),
+  name = c("Downtown", "East Boston", "Charlestown", "Roxbury", "Mattapan", "South Boston", "Dorchester", "South End", "Brighton", "West Roxbury", "Jamaica Plain", "Hyde Park", "N/A", "N/A")
+)
+
+crime %>%
+  mutate(REPTDISTRICT = ifelse(is.na(REPTDISTRICT), "NULL", REPTDISTRICT)) %>%
+  left_join(district_names, by = "REPTDISTRICT") %>%
+  group_by(date, name) %>%
+  summarize(count = n()) %>%
+  group_by(name) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n() ^ 0.5)) %>%
+  ggplot() +
+  geom_col(aes(x = reorder(name, avg), y = avg,fill=avg), na.rm = TRUE) +
+  geom_errorbar(aes(x = reorder(name, avg), ymin = avg - sd, ymax = avg + sd), width = 0.2, na.rm = TRUE) +
+  coord_flip() +
+  scale_fill_gradient(low = "blue", high = "red")+
+  xlab("Police District") +
+  ylab("Average Number of Crime (per day)")
+
+```
+
+Here is a map of the Boston police districts shaded by average number of crime:
+
+```{r,eval=FALSE}
+districts <- geojson_read("Police_Districts.geojson", what = "sp")
+
+district_crime <- crime %>%
+  group_by(date, REPTDISTRICT) %>%
+  summarize(count = n()) %>%
+  group_by(REPTDISTRICT) %>%
+  summarize(avg = mean(count)) %>%
+  filter(!is.na(REPTDISTRICT), REPTDISTRICT != "HTU", REPTDISTRICT != "NULL") %>%
+  left_join(district_names, by = "REPTDISTRICT")
+
+tempShape <- append_data(shp = districts, data = district_crime, key.shp = "DISTRICT", key.data = "REPTDISTRICT")
+
+pal <- colorNumeric(
+  palette = "Reds",
+  domain = district_crime$avg)
+
+leaflet(tempShape) %>%
+  addTiles() %>%
+  addPolygons(fillOpacity = 0.8, fillColor = ~pal(avg), label = ~name, color = "black", weight = 2) %>%
+  leaflet::addLegend("bottomright", pal = pal, values = ~avg,
+    title = "Crime Per Day",
+    opacity = 1
+  )
+  
+```
+
+
+For more fine-grained graphs or exploration, check out our RShiny App!
+
+
+```{r, include=FALSE}
+a <- crime %>%
+  filter(Shooting == "Yes") %>% nrow()
+b <- nrow(crime)
+
+a
+a/b
+```
+
+
+0.34%, or 2080 of the cases had *shooting* involved. Below is a distribution of them across the districts:
+
+* The ordering is *mostly similar*: again Roxbury tops the chart, while Charlestown had the lowest, but this time the difference appears *more extreme*. 
+
+* Downtown Boston ranks quite high considering all crimes, but ranks lower when only shooting is considered. Jamaica Plains ranks relatively low considering all crimes, but ranks higher when only shooting is considered.
+
+
+```{r}
+
+
+crime %>%
+  filter(Shooting == "Yes") %>%
+  mutate(REPTDISTRICT = ifelse(is.na(REPTDISTRICT), "NULL", REPTDISTRICT)) %>%
+  left_join(district_names, by = "REPTDISTRICT") %>%
+  group_by(name) %>%
+  summarize(count = n()) %>%
+  ggplot() +
+  geom_col(aes(x = reorder(name, count), y = count,fill=count), na.rm = TRUE) +
+  coord_flip() +
+  xlab("Police District") +
+  ylab("Total Number of Shootings")+
+  scale_fill_gradient(low = "brown", high = "orange")
+
+```
+
+
+
+### Street
+
+#### Word Cloud
+```{r}
+
+temp<-crime_original
+temp%>%
+  mutate(STREETNAME = ifelse(str_detect(STREETNAME, " AV$"), str_c(STREETNAME, "E", sep = ""), STREETNAME))%>%
+  count(STREETNAME) %>%
+  filter(!is.na(STREETNAME))%>%
+  with(wordcloud(STREETNAME,n , max.words = 100,random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+```
+
+```{r}
+data_3<-crime_original
+data_3%>%
+  group_by(year,month,date, STREETNAME) %>%
+  summarize(count = n()) %>%
+  group_by(STREETNAME) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n() ^ 0.5)) %>%
+  arrange(desc(avg))%>%
+  filter(!is.na(STREETNAME))%>%
+  filter(STREETNAME!="NULL")%>%
+  head(15)%>%
+  ggplot() +
+  geom_col(aes(x = reorder(STREETNAME, -avg), y = avg,fill=avg), na.rm = TRUE) +
+  geom_errorbar(aes(x = reorder(STREETNAME, -avg), ymin = avg - sd, ymax = avg + sd), width = 0.2, na.rm = TRUE)+
+   theme(axis.text.x=element_text(angle=60,hjust=1))+
+ scale_fill_gradient2()+
+  xlab("STREET NAME")
+```
+
+
+Here's a wordcloud and bar graph for the most dangerous street, ranking by the average amount of crimes reported on this street. Based on the bar graph, the most dangerous street is Washington st, however due to the limitation of the word cloud, we were not able to show Washington street on the graph. The wordcloud and bar graph give similar result on which street has most crimes, the top three are: Washington ST, Boyston St and Blue Hill Ave.  
+
+
+## School & Crime
+
+### Data
+
+We downloaded locations of public schools (K-12), non-public schools (K-12), and colleges/universities in Boston from data.boston.gov (https://data.boston.gov/dataset/public-schools, https://data.boston.gov/dataset/non-public-schools, https://data.boston.gov/dataset/colleges-and-universities)
+
+In total, there are 131 public schools, 82 non-public schools, and 60 colleges/universities in the dataset.
+
+```{r}
+crime_original <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/2012-2018dataset.csv")
+
+crime <- crime_original %>%
+    mutate(date = as.Date(occurred)) %>%
+    mutate(OFFENSE_CODE_GROUP = INCIDENT_TYPE_DESCRIPTION,
+           OCCURRED_ON_DATE = occurred,
+           STREET = STREETNAME,
+           DISTRICT = REPTDISTRICT,
+           UCR_PART = UCRPART) %>%
+    select(-INCIDENT_TYPE_DESCRIPTION, -occurred, -STREETNAME, -REPTDISTRICT, -UCRPART) %>%
+    separate(Location, into = c("Lat", "Long"), sep = ", ") %>%
+    mutate(Lat = as.numeric(str_sub(Lat, 2)), Long = as.numeric(str_sub(Long, 1, -2)))
+
+schools <- geojson_read("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Public_Schools.geojson", what = "sp")
+
+# nonpublic schools
+schools_np <- geojson_read("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Non_Public_Schools.geojson", what = "sp")
+
+# colleges
+schools_c <- geojson_read("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Colleges_and_Universities.geojson", what = "sp")
+
+school_coord <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Public_Schools.csv")
+school_coord_np <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Non_Public_Schools.csv")
+school_coord_c <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/Colleges_and_Universities.csv")
+```
+
+
+### Calculations
+
+We calculated the number of crime within a 2km * 2km box of each school in the dataset using coordinates (so approximately in an area with radius 1km).
+
+```{r}
+crime_density <- function(coord, grid_size = 0.01, df = crime){
+
+  results <- c()
+  for(i in 1:nrow(coord)){
+    x <- coord$X[i]
+    y <- coord$Y[i]
+    
+    count <- df %>%
+      filter(abs(x - Long) <= grid_size, abs(y - Lat) <= grid_size) %>%
+      nrow()
+    
+    results <- c(results, count)
+  }
+  return(results)
+}
+```
+
+
+
+```{r}
+density_total <- function(dff){
+  results_p <- crime_density(school_coord, 0.01, dff)
+  results_np <- crime_density(school_coord_np, 0.01, dff)
+  
+  temp <- mutate(school_coord_c, X = Longitude, Y = Latitude)
+  results_c <- crime_density(temp, 0.01, dff)
+  
+  
+  temp <- tibble(count = results_p, type = "public")
+  temp2 <- tibble(count = results_np, type = "non-public")
+  temp3 <- tibble(count = results_c, type = "college")
+  results_schools <- rbind(temp, temp2, temp3)
+  
+  return(results_schools)
+}
+
+ 
+```
+
+### Analysis
+
+#### General School Type
+
+The boxplot below shows the crime count for different public schools, non-public schools, and colleges/universities:
+
+```{r}
+tt <- density_total(crime)
+
+tt %>%
+  group_by(type) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  ggplot() +
+  geom_col(aes(reorder(type, avg), avg)) +
+  geom_errorbar(aes(x = reorder(type, avg), ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9))
+
+
+tt %>%
+ggplot() +
+  geom_boxplot(aes(reorder(type, count), count)) +
+  xlab("School Type") +
+  ylab("Crime Count")
+```
+
+As you might expect, *non-public schools* are the *safest*, *public schools* slightly *more dangerous* (more crimes), and *colleges* the *least safe*. 
+
+
+
+#### City Area
+
+Below are average counts of crime (per school) for public/non-public schools/colleges, broken down by city area:
+
+```{r}
+temp <- mutate(school_coord_c, X = Longitude, Y = Latitude)
+results_c <- crime_density(temp)
+results_np <- crime_density(school_coord_np)
+results_p <- crime_density(school_coord)
+
+school_city <- school_coord %>%
+  mutate(count = results_p) 
+
+school_city_np <- school_coord_np %>%
+  mutate(count = results_np) 
+
+school_city_c <- school_coord_c %>%
+  mutate(count = results_c)
+
+school_city %>%
+  group_by(CITY) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(CITY, avg), y = avg), stat = "identity") +
+  geom_errorbar(aes(x = reorder(CITY, avg), ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9)) + 
+  coord_flip() +
+  xlab("Area") +
+  ylab("Average Crime Count") +
+  ggtitle("Public Schools")
+
+school_city_np %>%
+  group_by(TOWN_MAIL) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(TOWN_MAIL, avg), y = avg), stat = "identity") +
+  geom_errorbar(aes(x = reorder(TOWN_MAIL, avg), ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9)) + 
+  coord_flip() +
+  xlab("Area") +
+  ylab("Average Crime Count") +
+  ggtitle("Non-Public Schools")
+
+school_city_c %>%
+  group_by(City) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  filter(!is.na(City)) %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(City, avg), y = avg), stat = "identity") +
+  geom_errorbar(aes(x = reorder(City, avg), ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9)) + 
+  coord_flip() +
+  xlab("Area") +
+  ylab("Average Crime Count") +
+  ggtitle("Colleges/Universities")
+```
+
+*Roxbury, Boston* seem to be the most dangerous, *West Roxbury* the safest. You can check which school areas are the safest from these graphs. 
+
+
+
+#### Grade
+
+
+```{r}
+school_city %>%
+  group_by(SCH_TYPE) %>%
+  summarize(avg = mean(count), sd = sd(count)/(n()^0.5)) %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(SCH_TYPE, avg), y = avg), stat = "identity") +
+  geom_errorbar(aes(x = reorder(SCH_TYPE, avg), ymin=avg-sd, ymax=avg+sd), width=.2, position=position_dodge(.9)) +
+  coord_flip() +
+  xlab("Grade") +
+  ylab("Average Crime Count") +
+  ggtitle("Public Schools")
+
+```
+
+Generally, the *younger the students, the more safe it is* (from Elementary School to Middle School to High School), which is expected probably, but still good to know. The error is large though, so the difference might be very small.
+
+
+
+
+## Income & Crime
+
+### Data
+
+The income data comes from the 2017 government census (https://www.census.gov/geo/maps-data/data/cbf/cbf_tracts.html, https://datausa.io/profile/geo/boston-ma/). There are in total 170 census tracts (or areas).
+
+
+```{r}
+load("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/MAcount.RData")
+  MA <- readOGR("~/Downloads/cb_2017_25_tract_500k/cb_2017_25_tract_500k.shp", GDAL1_integer64_policy = TRUE)
+  
+  income <- read_csv("~/DS_CLASS_2018-19_Christina/final_project/shiny_final_project/income_boston.csv") %>%
+    mutate(temp = geo) %>%
+    separate(temp, into = c("prefix", "GEOID"), sep = 7)
+  
+  income2016 <- income %>%
+    filter(year == "2016") %>%
+    filter(income != "None") %>%
+    mutate(income = as.numeric(income))
+  
+  outShape <- append_data(MA, income2016, key.shp = "GEOID", key.data = "GEOID")
+  testShape <- outShape[!is.na(outShape@data$income), ]
+  
+  pal <- colorNumeric(
+    palette = "Blues",
+    domain = income2016$income)
+```
+
+### Map
+
+The map below shows the median household income by census tract (darker color represents higher income):
+
+```{r}
+leaflet(testShape) %>%
+  addTiles() %>%
+  addPolygons(fillOpacity = 0.8, color = ~pal(income), highlightOptions = highlightOptions(color = "black", weight = 4,bringToFront = TRUE)) %>%
+  leaflet::addLegend("bottomright", pal = pal, values = ~income,
+    title = "Median Income",
+    labFormat = labelFormat(prefix = "$"),
+    opacity = 1
+  )
+```
+
+From the income map, the highest income region is in the outer-west part and also in downtown region. The mid-southern part has the lowest income.
+
+
+Compare this with the map of crime count:
+
+```{r}
+temp <- MAcount %>%
+  mutate(total = part1_count + part2_count + part3_count)
+
+crime_count <- tibble(
+      GEOID = MAcount$GEOID,
+      count = temp$total
+    )
+
+    shape_crime <- append_data(data = crime_count, shp = MA, key.shp = "GEOID", key.data = "GEOID")
+
+    testShape <- shape_crime[!is.na(shape_crime@data$count), ]
+    
+    pal <- colorNumeric(
+      palette = "Reds",
+      domain = testShape@data$count,
+      alpha = TRUE)
+    
+leaflet(testShape) %>%
+      addTiles() %>%
+      addPolygons(fillOpacity = 1, fillColor = ~pal(count), stroke = FALSE, weight = 1, color = "black") %>%
+      leaflet::addLegend("bottomright", pal = pal, values = ~count,
+                         title = "Crime Count",
+                         opacity = 1
+      )
+ 
+```
+
+Looking at the crime map, the most crime-concentrated areas include the downtown (dark-red) area and some scattered in the mid-southern part of Boston. So it seems like for some regions (mid-southern parts), indeed there is lower income and higher crime count. However, this is not true for other regions (for example, downtown). This makes sense since Boston is a large city, so even in high-income areas there could be large concentration of people, leading to higher crime rate
+
+
+
+### Correlation between Crime and Income
+
+```{r}
+income_crime <- income %>%
+  group_by(GEOID) %>%
+  filter(income != "None") %>%
+  mutate(income =  as.numeric(income)) %>%
+  summarize(avg_income = mean(income)) %>%
+  left_join(income2016, by = "GEOID") %>%
+  left_join(MAcount, by = c("GEOID")) %>%
+  mutate(total_count = part1_count + part2_count + part3_count)
+
+
+
+p <- ggplot(income_crime) +
+  geom_point(aes(x = avg_income, y = total_count)) +
+  xlab("Median Income") +
+  ylab("Crime Count")
+  
+ggplotly(p)
+
+
+# m <- lm(income_crime$avg_income ~ income_crime$total_count)
+# summary(m)
+```
+
+The scatterplot above shows the median income and crime count of different census tracts. There appears to be **no strong correlation between crime and income** (indeed, the r-squared value is less than 0.03)
+
+
+
+
+
